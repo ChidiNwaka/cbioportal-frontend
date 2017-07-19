@@ -33,7 +33,7 @@ import {
     findGeneticProfileIdDiscrete, ONCOKB_DEFAULT, fetchOncoKbData, fetchCnaOncoKbData,
     indexHotspotData, mergeMutations, fetchHotspotsData, fetchMyCancerGenomeData, fetchCosmicData,
     fetchMutationData, fetchDiscreteCNAData, generateSampleIdToTumorTypeMap, findMutationGeneticProfileId,
-    findUncalledMutationGeneticProfileId, mergeMutationsIncludingUncalled, fetchGisticData, fetchCopyNumberData,
+    findUncalledMutationGeneticProfileId, findGeneticProfileIdContinuous, mergeMutationsIncludingUncalled, fetchGisticData, fetchCopyNumberData,
     fetchMutSigData, findMrnaRankGeneticProfileId, mergeDiscreteCNAData, fetchSamplesForPatient, fetchClinicalData,
     fetchCopyNumberSegments, fetchClinicalDataForPatient, makeStudyToCancerTypeMap,
     fetchCivicGenes, fetchCnaCivicGenes, fetchCivicVariants
@@ -168,6 +168,13 @@ export class PatientViewPageStore {
         invoke: async() => findUncalledMutationGeneticProfileId(this.geneticProfilesInStudy, this.studyId)
     });
 
+    readonly segGeneticProfileId = remoteData({
+        await: () => [
+            this.geneticProfilesInStudy
+        ],
+        invoke: async() => findGeneticProfileIdContinuous(this.geneticProfilesInStudy)
+    });
+
     @observable patientIdsInCohort: string[] = [];
 
     @computed get myCancerGenomeData() {
@@ -205,9 +212,10 @@ export class PatientViewPageStore {
 
     readonly cnaSegments = remoteData({
         await: () => [
-            this.samples
+            this.samples,
+            this.segGeneticProfileId
         ],
-        invoke: () => fetchCopyNumberSegments(this.studyId, this.sampleIds)
+        invoke: () => fetchCopyNumberSegments(this.studyId, this.segGeneticProfileId.result, this.sampleIds)
     }, []);
 
     readonly pathologyReport = remoteData({
