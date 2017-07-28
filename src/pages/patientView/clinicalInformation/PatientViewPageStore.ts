@@ -33,23 +33,14 @@ import {
     findGeneticProfileIdDiscrete, ONCOKB_DEFAULT, fetchOncoKbData, fetchCnaOncoKbData,
     indexHotspotData, mergeMutations, fetchHotspotsData, fetchMyCancerGenomeData, fetchCosmicData,
     fetchMutationData, fetchDiscreteCNAData, generateSampleIdToTumorTypeMap, findMutationGeneticProfileId,
-    findUncalledMutationGeneticProfileId, findGeneticProfileIdContinuous, mergeMutationsIncludingUncalled, fetchGisticData, fetchCopyNumberData,
+    findUncalledMutationGeneticProfileId, mergeMutationsIncludingUncalled, fetchGisticData, fetchCopyNumberData,
     fetchMutSigData, findMrnaRankGeneticProfileId, mergeDiscreteCNAData, fetchSamplesForPatient, fetchClinicalData,
     fetchCopyNumberSegments, fetchClinicalDataForPatient, makeStudyToCancerTypeMap,
-    fetchCivicGenes, fetchCnaCivicGenes, fetchCivicVariants
+    fetchCivicGenes, fetchCnaCivicGenes, fetchCivicVariants, groupByEntityId, findSamplesWithoutCancerTypeClinicalData,
+    fetchStudiesForSamplesWithoutCancerTypeClinicalData
 } from "shared/lib/StoreUtils";
 
 type PageMode = 'patient' | 'sample';
-
-export function groupByEntityId(clinicalDataArray: Array<ClinicalData>) {
-    return _.map(
-        _.groupBy(clinicalDataArray, 'entityId'),
-        (v: ClinicalData[], k: string): ClinicalDataBySampleId => ({
-            clinicalData: v,
-            id: k,
-        })
-    );
-}
 
 export async function checkForTissueImage(patientId: string): Promise<boolean> {
 
@@ -91,15 +82,15 @@ export function handlePathologyReportCheckResponse(patientId: string, resp: any)
  * Transform clinical data from API to clinical data shape as it will be stored
  * in the store
  */
-function transformClinicalInformationToStoreShape(patientId: string, studyId: string, clinicalDataPatient: Array<ClinicalData>, clinicalDataSample: Array<ClinicalData>): ClinicalInformationData {
+function transformClinicalInformationToStoreShape(patientId: string, studyId: string, sampleIds: Array<string>, clinicalDataPatient: Array<ClinicalData>, clinicalDataSample: Array<ClinicalData>): ClinicalInformationData {
     const patient = {
         id: patientId,
         clinicalData: clinicalDataPatient
     };
-    const samples = groupByEntityId(clinicalDataSample);
+    const samples = groupByEntityId(sampleIds, clinicalDataSample);
     const rv = {
         patient,
-        samples,
+        samples
     };
 
     return rv;
@@ -171,13 +162,6 @@ export class PatientViewPageStore {
         invoke: async() => findUncalledMutationGeneticProfileId(this.geneticProfilesInStudy, this.studyId)
     });
 
-    readonly segGeneticProfileId = remoteData({
-        await: () => [
-            this.geneticProfilesInStudy
-        ],
-        invoke: async() => findGeneticProfileIdContinuous(this.geneticProfilesInStudy)
-    });
-
     @observable patientIdsInCohort: string[] = [];
 
     @computed get myCancerGenomeData() {
@@ -205,6 +189,21 @@ export class PatientViewPageStore {
         []
     );
 
+    readonly samplesWithoutCancerTypeClinicalData = remoteData({
+        await: () => [
+            this.samples,
+            this.clinicalDataForSamples
+        ],
+        invoke: async () => findSamplesWithoutCancerTypeClinicalData(this.samples, this.clinicalDataForSamples)
+    }, []);
+
+    readonly studiesForSamplesWithoutCancerTypeClinicalData = remoteData({
+        await: () => [
+            this.samplesWithoutCancerTypeClinicalData
+        ],
+        invoke: async () => fetchStudiesForSamplesWithoutCancerTypeClinicalData(this.samplesWithoutCancerTypeClinicalData)
+    }, []);
+
     readonly studies = remoteData({
         invoke: async()=>([await client.getStudyUsingGET({studyId: this.studyId})])
     }, []);
@@ -215,10 +214,9 @@ export class PatientViewPageStore {
 
     readonly cnaSegments = remoteData({
         await: () => [
-            this.samples,
-            this.segGeneticProfileId
+            this.samples
         ],
-        invoke: () => fetchCopyNumberSegments(this.studyId, this.segGeneticProfileId.result, this.sampleIds)
+        invoke: () => fetchCopyNumberSegments(this.studyId, this.sampleIds)
     }, []);
 
     readonly pathologyReport = remoteData({
@@ -301,7 +299,7 @@ export class PatientViewPageStore {
 
     readonly clinicalDataGroupedBySample = remoteData({
         await: () => [this.clinicalDataForSamples],
-        invoke: async() => groupByEntityId(this.clinicalDataForSamples.result)
+        invoke: async() => groupByEntityId(this.sampleIds, this.clinicalDataForSamples.result)
     }, []);
 
     readonly studyMetaData = remoteData({
@@ -311,11 +309,12 @@ export class PatientViewPageStore {
     readonly patientViewData = remoteData({
         await: () => [
             this.clinicalDataPatient,
-            this.clinicalDataForSamples
+            this.clinicalDataForSamples,
         ],
         invoke: async() => transformClinicalInformationToStoreShape(
             this.patientId,
             this.studyId,
+            this.sampleIds,
             this.clinicalDataPatient.result,
             this.clinicalDataForSamples.result
         )
@@ -452,6 +451,7 @@ export class PatientViewPageStore {
             this.mutationData,
             this.uncalledMutationData,
             this.clinicalDataForSamples,
+            this.studiesForSamplesWithoutCancerTypeClinicalData,
             this.studies
         ],
         invoke: async() => fetchOncoKbData(this.sampleIdToTumorType, this.mutationData, this.uncalledMutationData),
@@ -550,8 +550,8 @@ export class PatientViewPageStore {
 
     @computed get sampleIdToTumorType(): {[sampleId: string]: string} {
         return generateSampleIdToTumorTypeMap(this.clinicalDataForSamples,
-            this.studyToCancerType[this.studyId],
-            this.samples);
+            this.studiesForSamplesWithoutCancerTypeClinicalData,
+            this.samplesWithoutCancerTypeClinicalData);
     }
 
     @action("SetSampleId") setSampleId(newId: string) {
