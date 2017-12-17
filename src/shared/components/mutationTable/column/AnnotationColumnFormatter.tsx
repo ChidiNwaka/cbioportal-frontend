@@ -301,12 +301,6 @@ export default class AnnotationColumnFormatter
                         hasCivicVariants={annotation.hasCivicVariants}
                     />
                 </If>
-                <If condition={columnProps.enableCivic || false}>
-                    <Civic
-                        civicEntry={annotation.civicEntry}
-                        hasCivicVariants={annotation.hasCivicVariants}
-                    />
-                </If>
                 <If condition={columnProps.enableMyCancerGenome || false}>
                     <MyCancerGenome
                         linksHTML={annotation.myCancerGenomeLinks}

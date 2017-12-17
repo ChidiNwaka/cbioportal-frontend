@@ -386,8 +386,6 @@ export type DiscreteCopyNumberData = {
 
         'patientId': string
 
-        'patientId': string
-
         'sampleId': string
 
         'studyId': string
